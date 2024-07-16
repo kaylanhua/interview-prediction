@@ -23,3 +23,5 @@ ollama
 langchain-community
 langchain-openai
 torch
+sentence-transformers
+umap-learn
