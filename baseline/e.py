@@ -31,7 +31,7 @@ Passage:
 )
 
 options = {
-    "description": """Rate the technical expertise of the interviewee response from 1 to 5 based on the rubric below. Ignore the quality of the interview, give the rating on technical merit alone. Keep in mind that it is rare for a reponse to be scored a 4 and even more rare for a response to be scored a 5. The rubric is as follows:
+    "description": """Rate the technical expertise of the interviewee response from 1 to 5 based on the rubric below. Ignore the quality of the interview, give the rating on technical merit alone. Keep in mind that it is rare for a reponse to be scored a 4 and even more rare for a response to be scored a 5——only 16 percent of respondants were given a 3 or higher. The rubric is as follows:
 
 1 = Rarely uses technical terms and, when used, they are often inaccurate or misapplied. Lacks basic familiarity with relevant technologies, methodologies, or frameworks.
 
