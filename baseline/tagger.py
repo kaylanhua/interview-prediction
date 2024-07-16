@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 import os
+import math
 import openai
 import re
 
@@ -99,10 +100,57 @@ class Tagger:
         
         return result.rating
     
-    def apply_function_to_df(self, df, func):
-        df["Prediction"] = df.apply(lambda row: func(row["Question"], row["Response"]), axis=1)
+    def apply_function_to_df(self, df, func, include_question=False, col_name="Prediction"):
+        if include_question:
+            df[col_name] = df.apply(lambda row: func(row["Question"], row["Response"]), axis=1)
+        else:
+            df[col_name] = df.apply(lambda row: func(row["Response"]), axis=1)
         return df
     
+    def llm_valid_response(self, response):
+        if isinstance(response, float) and math.isnan(response):
+            return False
+        elif len(response) < 4:
+            return False
+        # elif len(response) > 100:
+        #     return True
+        
+        tagging_prompt = ChatPromptTemplate.from_template(
+            """
+        You are given a response to a technical interview question. Extract the desired information from the following passage.
+
+        Only extract the properties mentioned in the 'ValidResponse' function.
+
+        Interviewee's Response:
+        {response}
+        """
+        )
+
+        # If you believe that the response contains a full answer and could feasibly be considered as an answer to a technical interview question, return True. If you believe that the answer is not a full answer, return False. Most answers are full answers, so if you are unsure, return True. Do not judge the quality of the answer. Just judge whether you think the answer is valid to be evaluated.
+
+        options = {
+            "description": """If the response contains a request to repeat or clarify the question, return False. Return True otherwise. Do not judge the quality of the answer. Just judge whether the answer requests a clarification or not.""",
+            "enum": [True, False]
+        }
+        description, enum = options["description"], options["enum"]
+
+
+        class ValidResponse(BaseModel):
+            rating: bool = Field(
+                description=description,
+                enum=enum,
+            )
+
+        llm = ChatOpenAI(temperature=0, model="gpt-3.5-turbo").with_structured_output(
+            ValidResponse
+        )
+
+        chain = tagging_prompt | llm
+
+        result = chain.invoke({"response": response})
+        
+        return result.rating
+        
     def evaluate(self, df=None):
         # evaluate given that prediction is done
         if df is None:
@@ -128,7 +176,7 @@ class Tagger:
 def main():
     train = pd.read_csv('../data/train.csv')
     # data = train.sample(frac=1).reset_index(drop=True)
-    small = train[:10]
+    small = train
     small = pd.DataFrame(small)
     processor = ProcessData(small)
     baby = processor.split_df()
@@ -137,6 +185,8 @@ def main():
     df = tagger.apply_function_to_df(baby, tagger.simple)
     
     print(df.head())
+    
+    df.to_csv('../data/baseline.csv')
 
     loss = tagger.evaluate(df)
     print(f"Log Loss: {loss}")
