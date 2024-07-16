@@ -112,8 +112,8 @@ class Tagger:
             return False
         elif len(response) < 4:
             return False
-        # elif len(response) > 100:
-        #     return True
+        elif len(response) > 300:
+            return True
         
         tagging_prompt = ChatPromptTemplate.from_template(
             """
