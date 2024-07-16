@@ -22,3 +22,4 @@ openai
 ollama
 langchain-community
 langchain-openai
+torch

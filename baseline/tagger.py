@@ -16,6 +16,8 @@ from langchain_core.pydantic_v1 import BaseModel, Field
 
 # ML
 from sklearn.metrics import log_loss
+import torch 
+import torch.nn.functional as F
 
 # GLOBALS
 openai.organization = "org-raWgaVqCbuR9YlP1CIjclYHk" # Harvard
@@ -65,7 +67,7 @@ class Tagger:
         )
 
         options = {
-            "description": """Rate the technical expertise of the interviewee response from 1 to 5 based on the rubric below. Ignore the quality of the interview, give the rating on technical merit alone. Keep in mind that it is rare for a reponse to be scored a 4 and even more rare for a response to be scored a 5——only 16 percent of respondants were given a 3 or higher. The rubric is as follows:
+            "description": """Rate the technical expertise of the interviewee response from 1 to 5 based on the rubric below. Ignore the quality of the interview, give the rating on technical merit alone. Keep in mind that it is not common for a response to be scored a 3, rare for a response to be scored a 4, and even more rare for a response to be scored a 5——only 16 percent of respondants were given a 3 or higher. The rubric is as follows:
 
         1 = Rarely uses technical terms and, when used, they are often inaccurate or misapplied. Lacks basic familiarity with relevant technologies, methodologies, or frameworks.
 
@@ -101,16 +103,25 @@ class Tagger:
         df["Prediction"] = df.apply(lambda row: func(row["Question"], row["Response"]), axis=1)
         return df
     
-    def evaluate(self, eval_dataset=None):
+    def evaluate(self, df=None):
         # evaluate given that prediction is done
-        if eval_dataset is None:
-            eval_dataset = self.DataFrame
-        
-        y_true = eval_dataset["Label"]
-        y_pred = eval_dataset["Prediction"]
-        
-        # CE loss
-        loss = log_loss(y_true, y_pred, labels=[1, 2, 3, 4])
+        if df is None:
+            df = self.DataFrame
+            
+        if "Label" not in df.columns or "Prediction" not in df.columns:
+            raise ValueError("DataFrame must have both 'Label' and 'Prediction' columns")
+            
+        true_labels = df["Label"]
+        predicted_labels = df["Prediction"]
+        num_classes = np.unique(true_labels).size
+
+        true_labels_one_hot = np.eye(num_classes)[true_labels - 1]
+        predicted_labels_one_hot = np.eye(num_classes)[predicted_labels - 1]
+
+        true_labels_tensor = torch.tensor(true_labels_one_hot, dtype=torch.float32)
+        predicted_labels_tensor = torch.tensor(predicted_labels_one_hot, dtype=torch.float32)
+
+        loss = F.cross_entropy(predicted_labels_tensor, true_labels_tensor)
         return loss
     
 
@@ -127,9 +138,8 @@ def main():
     
     print(df.head())
 
-    # # Evaluate the results
-    # loss = tagger.evaluate(df)
-    # print(f"Log Loss: {loss}")
+    loss = tagger.evaluate(df)
+    print(f"Log Loss: {loss}")
 
 if __name__ == "__main__":
     main()
