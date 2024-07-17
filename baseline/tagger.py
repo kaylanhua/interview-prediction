@@ -150,26 +150,43 @@ class Tagger:
         result = chain.invoke({"response": response})
         
         return result.rating
+
+class Evaluations:
+    def __init__(self):
+        pass
+    
+    def misclassified(self, df=None):
+        if df is None:
+            df = self.DataFrame
         
-    def evaluate(self, df=None):
+        return df[df["Label"] != df["Prediction"]]
+    
+    def evaluate(self, df=None, loss_type="accuracy"):
         # evaluate given that prediction is done
         if df is None:
             df = self.DataFrame
             
         if "Label" not in df.columns or "Prediction" not in df.columns:
             raise ValueError("DataFrame must have both 'Label' and 'Prediction' columns")
-            
+        
         true_labels = df["Label"]
         predicted_labels = df["Prediction"]
-        num_classes = np.unique(true_labels).size
+        
+        if loss_type == "ce":
+            num_classes = np.unique(true_labels).size
 
-        true_labels_one_hot = np.eye(num_classes)[true_labels - 1]
-        predicted_labels_one_hot = np.eye(num_classes)[predicted_labels - 1]
+            true_labels_one_hot = np.eye(num_classes)[true_labels - 1]
+            predicted_labels_one_hot = np.eye(num_classes)[predicted_labels - 1]
 
-        true_labels_tensor = torch.tensor(true_labels_one_hot, dtype=torch.float32)
-        predicted_labels_tensor = torch.tensor(predicted_labels_one_hot, dtype=torch.float32)
+            true_labels_tensor = torch.tensor(true_labels_one_hot, dtype=torch.float32)
+            predicted_labels_tensor = torch.tensor(predicted_labels_one_hot, dtype=torch.float32)
 
-        loss = F.cross_entropy(predicted_labels_tensor, true_labels_tensor)
+            loss = F.cross_entropy(predicted_labels_tensor, true_labels_tensor)
+        elif loss_type == "accuracy":
+            loss = (predicted_labels == true_labels).mean() * 100
+        else:
+            raise ValueError("Invalid loss type")
+        
         return loss
     
 
