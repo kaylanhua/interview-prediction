@@ -25,3 +25,5 @@ langchain-openai
 torch
 sentence-transformers
 umap-learn
+setfit
+ipywidgets
