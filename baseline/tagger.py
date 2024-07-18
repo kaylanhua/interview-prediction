@@ -16,9 +16,17 @@ from langchain_core.prompts import PromptTemplate
 from langchain_core.pydantic_v1 import BaseModel, Field
 
 # ML
-from sklearn.metrics import log_loss
+from sklearn.metrics import log_loss, accuracy_score
 import torch 
 import torch.nn.functional as F
+from xgboost import XGBClassifier
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.svm import SVC
+
 
 # GLOBALS
 openai.organization = "org-raWgaVqCbuR9YlP1CIjclYHk" # Harvard
@@ -110,11 +118,20 @@ class Tagger:
     def llm_valid_response(self, response):
         if isinstance(response, float) and math.isnan(response):
             return False
-        elif len(response) < 4:
+        elif len(response) < 50: # used to be 4, less than 10 words is unlikely to produce a favorable result 
             return False
         elif len(response) > 300:
             return True
+
+        options = {
+            "description": """If the response contains a request to repeat or clarify the question, return False. Return True otherwise. Do not judge the quality of the answer. Just judge whether the answer requests a clarification or not.""",
+            "enum": [True, False]
+        }
+        return self.llm_bool(response, options)
         
+    def llm_bool(self, response, options):
+        description, enum = options["description"], options["enum"]
+
         tagging_prompt = ChatPromptTemplate.from_template(
             """
         You are given a response to a technical interview question. Extract the desired information from the following passage.
@@ -125,16 +142,7 @@ class Tagger:
         {response}
         """
         )
-
-        # If you believe that the response contains a full answer and could feasibly be considered as an answer to a technical interview question, return True. If you believe that the answer is not a full answer, return False. Most answers are full answers, so if you are unsure, return True. Do not judge the quality of the answer. Just judge whether you think the answer is valid to be evaluated.
-
-        options = {
-            "description": """If the response contains a request to repeat or clarify the question, return False. Return True otherwise. Do not judge the quality of the answer. Just judge whether the answer requests a clarification or not.""",
-            "enum": [True, False]
-        }
-        description, enum = options["description"], options["enum"]
-
-
+        
         class ValidResponse(BaseModel):
             rating: bool = Field(
                 description=description,
@@ -150,6 +158,83 @@ class Tagger:
         result = chain.invoke({"response": response})
         
         return result.rating
+    
+    def xgb(self, train_data, eval_data):
+        X_train = train_data['Response']
+        y_train = train_data['Label']
+        y_train = y_train - 1
+        
+        X_test = eval_data['Response']
+        
+        tfidf_vectorizer = TfidfVectorizer(max_features=5000)
+        X_train_tfidf = tfidf_vectorizer.fit_transform(X_train)
+        X_test_tfidf = tfidf_vectorizer.transform(X_test)
+        
+        xgb_classifier = XGBClassifier(use_label_encoder=False, eval_metric='logloss')
+        xgb_classifier.fit(X_train_tfidf, y_train)
+        
+        eval_data["xgb"] = xgb_classifier.predict(X_test_tfidf) + 1
+        train_data["xgb"] = xgb_classifier.predict(X_train_tfidf) + 1
+        
+        class_counts = eval_data["xgb"].value_counts()
+        print("XGB class counts for evaluation set:")
+        print(class_counts)
+        
+        return eval_data, train_data
+
+    def length_lr(self, train_data, eval_data):
+        X_train = train_data['Response'].str.len().values.reshape(-1, 1)  
+        y_train = train_data['Label'] 
+        X_test = eval_data['Response'].str.len().values.reshape(-1, 1) 
+
+        model = LogisticRegression(max_iter=1000)  # Increase the number of iterations
+        model.fit(X_train, y_train)
+
+        eval_data["length_lr"] = model.predict(X_test)
+        train_data["length_lr"] = model.predict(X_train)
+        
+        class_counts = eval_data["length_lr"].value_counts()
+        print("LENGTH LR class counts for evaluation set:")
+        print(class_counts)
+        
+        return eval_data, train_data
+    
+    def super_tagger(self, train_data, eval_data):
+        
+        # Prepare training data
+        X_train = train_data[["zero_shot", "length_lr", "xgb"]]
+        y_train = train_data["Label"]
+
+        # Prepare validation data
+        X_val = eval_data[["zero_shot", "length_lr", "xgb"]]
+        y_val = eval_data["Label"]
+
+        # Train Random Forest
+        rf_model = RandomForestClassifier(n_estimators=100, random_state=42)
+        rf_model.fit(X_train, y_train)
+        rf_predictions = rf_model.predict(X_val)
+        rf_accuracy = accuracy_score(y_val, rf_predictions)
+        eval_data["pred_rf"] = rf_predictions
+        print(f"Random Forest Accuracy: {rf_accuracy * 100:.2f}%")
+
+        # Train XGBoost
+        xgb_model = XGBClassifier(use_label_encoder=False, eval_metric='logloss')
+        xgb_model.fit(X_train, y_train - 1)
+        xgb_predictions = xgb_model.predict(X_val) + 1
+        xgb_accuracy = accuracy_score(y_val, xgb_predictions)
+        eval_data["pred_xgb"] = xgb_predictions
+        print(f"XGBoost Accuracy: {xgb_accuracy * 100:.2f}%")
+
+        # Train SVM
+        svm_model = SVC(kernel='linear', random_state=42)
+        svm_model.fit(X_train, y_train)
+        svm_predictions = svm_model.predict(X_val)
+        svm_accuracy = accuracy_score(y_val, svm_predictions)
+        eval_data["pred_svm"] = svm_predictions
+        print(f"SVM Accuracy: {svm_accuracy * 100:.2f}%")
+        
+        return eval_data, train_data
+
 
 class Evaluations:
     def __init__(self):
@@ -161,16 +246,16 @@ class Evaluations:
         
         return df[df["Label"] != df["Prediction"]]
     
-    def evaluate(self, df=None, loss_type="accuracy"):
+    def evaluate(self, df=None, predict_col="Prediction", loss_type="accuracy"):
         # evaluate given that prediction is done
         if df is None:
             df = self.DataFrame
             
-        if "Label" not in df.columns or "Prediction" not in df.columns:
+        if "Label" not in df.columns or predict_col not in df.columns:
             raise ValueError("DataFrame must have both 'Label' and 'Prediction' columns")
         
         true_labels = df["Label"]
-        predicted_labels = df["Prediction"]
+        predicted_labels = df[predict_col]
         
         if loss_type == "ce":
             num_classes = np.unique(true_labels).size

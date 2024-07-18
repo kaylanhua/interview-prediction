@@ -27,3 +27,4 @@ sentence-transformers
 umap-learn
 setfit
 ipywidgets
+spacy
