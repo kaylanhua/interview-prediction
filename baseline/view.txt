@@ -1,0 +1,6 @@
+Generated Response: 
+
+So, like, when working with customer reviews, it's, like, really important to take into account, like, all of the different, like, nuances and stuff, right? Because, like, customers, they can have, like, really subtle, like, emotions and things that are, like, really hard to, like, capture, you know? And, like, VADER, it's, like, really good, because it can handle, like, those little, like, nuances and stuff, and, like, it's, like, way better than, like, just using, like, a simple bag-of-words approach, you know? But, like, for, like, really, like, tricky, like, customer reviews that, like, even VADER, like, might not, like, fully, like, understand, we, like, had, like, a, like, team, you know, that, like, would, like, read through, like, all the reviews and, like, kind of, like, manually, like, assess, like, the sentiment and, like, make, like, note of any, like, nuances that, like, VADER might, like, not, like,
+
+True Response: So like for for handling the nuances words I have done. I have done feature Engineering in that like the words that were repeated more the words that has the most frequency. I have reduced it to one so that the model could predict easily.
+
