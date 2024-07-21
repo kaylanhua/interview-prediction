@@ -28,3 +28,4 @@ umap-learn
 setfit
 ipywidgets
 spacy
+langchain-anthropic

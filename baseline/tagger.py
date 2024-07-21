@@ -14,6 +14,7 @@ from langchain_openai import ChatOpenAI
 from langchain.output_parsers import PydanticOutputParser
 from langchain_core.prompts import PromptTemplate
 from langchain_core.pydantic_v1 import BaseModel, Field
+from langchain_anthropic import ChatAnthropic
 
 # ML
 from sklearn.metrics import log_loss, accuracy_score
@@ -26,7 +27,9 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import SVC
+import os
 
+# Set the API key for langchain_anthropic ChatAnthropic
 
 # GLOBALS
 openai.organization = "org-raWgaVqCbuR9YlP1CIjclYHk" # Harvard
@@ -60,7 +63,7 @@ class Tagger:
     #     self.DataFrame = new_df.copy()
     #     return self.DataFrame
 
-    def simple(self, question, response):
+    def simple(self, question, response, model="gpt-3.5-turbo"):
         tagging_prompt = ChatPromptTemplate.from_template(
             """
         Extract the desired information from the following passage.
@@ -97,10 +100,17 @@ class Tagger:
                 description=description,
                 enum=enum,
             )
+        
+        # gpt-3.5-turbo
+        if model=="claude":
+            llm = ChatAnthropic(model='claude-3-opus-20240229').with_structured_output(
+                Classification
+            )
 
-        llm = ChatOpenAI(temperature=0, model="gpt-3.5-turbo").with_structured_output(
-            Classification
-        )
+        else:
+            llm = ChatOpenAI(temperature=0, model=model).with_structured_output(
+                Classification
+            )
 
         chain = tagging_prompt | llm
 
@@ -108,11 +118,11 @@ class Tagger:
         
         return result.rating
     
-    def apply_function_to_df(self, df, func, include_question=False, col_name="Prediction"):
+    def apply_function_to_df(self, df, func, include_question=False, col_name="Prediction", model="gpt-3.5-turbo"):
         if include_question:
-            df[col_name] = df.apply(lambda row: func(row["Question"], row["Response"]), axis=1)
+            df[col_name] = df.apply(lambda row: func(row["Question"], row["Response"], model=model), axis=1)
         else:
-            df[col_name] = df.apply(lambda row: func(row["Response"]), axis=1)
+            df[col_name] = df.apply(lambda row: func(row["Response"], model=model), axis=1)
         return df
     
     def llm_valid_response(self, response):
@@ -127,9 +137,9 @@ class Tagger:
             "description": """If the response contains a request to repeat or clarify the question, return False. Return True otherwise. Do not judge the quality of the answer. Just judge whether the answer requests a clarification or not.""",
             "enum": [True, False]
         }
-        return self.llm_bool(response, options)
+    #     return self.llm_bool(response, options)
         
-    def llm_bool(self, response, options):
+    # def llm_bool(self, response, options):
         description, enum = options["description"], options["enum"]
 
         tagging_prompt = ChatPromptTemplate.from_template(
